@@ -6,6 +6,7 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
 using System.Linq;
+using System.Management;
 using System.Reflection;
 using System.Runtime.InteropServices;
 using System.Runtime.InteropServices.ComTypes;
@@ -167,16 +168,26 @@ public class ScriptHost
                 for( int i = 0; i < exeNames.Length; i++)
                 {
                     var process = processes[i];
-                    if (exeNames[i].ToLower() == hostExePath.ToLower())
-                    {
-                        // No need to attach if debugging multiple processes
-                        if (dte != null && dte.Debugger.DebuggedProcesses.Count <= 1)
-                            process.Attach2(engines);
+                    var processId = process.ProcessID;
 
-                        new IpcChannel(process.ProcessID).Send(csScript);
-                        bAttached = true;
-                        break;
-                    }
+                    if (exeNames[i].ToLower() != hostExePath.ToLower())
+                        continue;
+
+                    //
+                    // Prevents trying to attach to my own process (Normally Visual studio should not be able to see and attach to process
+                    // which it debugs, but apparently sometimes it's possible)
+                    //
+                    String cmdArgs = GetProcessCommandLine(processId);
+                    if (cmdArgs == null || !cmdArgs.Contains("-Embedding"))
+                        continue;
+
+                    // No need to attach if debugging multiple processes
+                    if (dte != null && dte.Debugger.DebuggedProcesses.Count <= 1)
+                        process.Attach2(engines);
+
+                    new IpcChannel(process.ProcessID).Send(csScript);
+                    bAttached = true;
+                    break;
                 }
 
                 if (bAttached)
@@ -234,6 +245,19 @@ public class ScriptHost
         }
 
         return parentProcess;
+    }
+
+
+    /// <summary>
+    /// Gets command line of specific process.
+    /// </summary>
+    /// <param name="processId">process id</param>
+    /// <returns>null if not accessible (e.g. executed with admin priviledges)</returns>
+    public static string GetProcessCommandLine(int processId)
+    {
+        using (ManagementObjectSearcher searcher = new ManagementObjectSearcher("SELECT CommandLine FROM Win32_Process WHERE ProcessId = " + processId))
+        using (ManagementObjectCollection objects = searcher.Get())
+            return objects.Cast<ManagementBaseObject>().SingleOrDefault()?["CommandLine"]?.ToString();
     }
 
 
