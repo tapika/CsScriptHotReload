@@ -109,7 +109,8 @@ public class ScriptHost
                 while (true)
                 {
                     if (Console.KeyAvailable)
-                        break;
+                        if (Console.ReadKey().KeyChar == 13)
+                            break;
 
                     // Needed for AppDomain.Unload
                     Application.DoEvents();
